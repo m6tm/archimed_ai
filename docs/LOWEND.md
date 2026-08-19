@@ -1,13 +1,13 @@
-# Low-End & Connexions faibles — Spécifications techniques
+# Low-End & Machines faibles — Spécifications techniques
 
 > Statut : **Référence**. Compagnon de `PERFORMANCE.md`, focalisé sur un seul objectif :
-> **fonctionner correctement sur machines faibles (4-8 Go RAM, GPU intégré) et connexions lentes (3G/Edge, data limitée).**
-> Dernière mise à jour : 2026-06-27
+> **fonctionner correctement sur machines faibles (4-8 Go RAM, GPU intégré, disque lent) en mode desktop Tauri.**
+> Dernière mise à jour : 2026-08-19
 
 ## Périmètre
 
-- **MVP 1** : interface 2D + appels API. Les contraintes sont le poids du JS initial, la latence LLM et la consommation data.
-- **MVP 2** : WebGL + assets 3D. Les contraintes GPU/RAM deviennent critiques.
+- **MVP 1** : interface 2D + appels au LLM via Tauri. Les contraintes sont le poids du JS initial, la latence LLM et la consommation disque.
+- **MVP 2** : WebGL + assets 3D. Les contraintes GPU/RAM/deviennent critiques.
 
 Ce document couvre les deux MVP, avec des sections spécifiques quand nécessaire.
 
@@ -16,19 +16,19 @@ Ce document couvre les deux MVP, avec des sections spécifiques quand nécessair
 Le document `PERFORMANCE.md` optimise la **vitesse de rendu** (GPU). Ce document attaque ce que l'autre ne couvre pas :
 
 ```
-1. RÉSEAU   — livrer l'app sur 3G/Edge sans attendre 15 s
-2. RAM      — tenir dans 4-8 Go avec d'autres apps ouvertes
-3. CPU/GC   — éviter les micro-freezes (jank) fatals en visite FPS
-4. RENDU    — adapter dynamiquement la charge GPU
-5. PERÇU    — masquer la lenteur par la perception (feedback immédiat)
+1. FIRST-RUN — télécharger et installer les assets initiaux même sur machine / réseau faibles
+2. RAM        — tenir dans 4-8 Go avec d'autres apps ouvertes
+3. CPU/GC     — éviter les micro-freezes (jank) fatals en visite FPS
+4. RENDU      — adapter dynamiquement la charge GPU
+5. PERÇU      — masquer la lenteur par la perception (feedback immédiat)
 ```
 
 > **Cibles chiffrées (objectifs) :**
-> - LCP (Largest Contentful Paint) < 2,5 s sur **Fast 3G**
-> - TTI (Time To Interactive) < 5 s sur Fast 3G
+> - Premier écran affiché < 1 s après lancement de l'application
+> - First-run (téléchargement + installation pack initial) < 30 s sur connexion modeste
 > - RAM consommée < 150 Mo
 > - **0 jank > 16 ms** en visite FPS (GC maîtrisé)
-> - App **100 % fonctionnelle hors-ligne** après 1re visite (PWA)
+> - App **100 % fonctionnelle hors-ligne** après téléchargement initial des assets
 
 ---
 
@@ -39,51 +39,42 @@ Le MVP 1 ne charge pas three.js ni de gros assets 3D. Ses contraintes low-end so
 | Métrique | Cible MVP 1 | Pourquoi |
 |----------|-------------|----------|
 | Bundle JS initial | < 120 Ko gz | Formulaires + SVG léger |
-| LCP | < 2,5 s sur Fast 3G | Premier formulaire affiché rapidement |
-| TTI | < 5 s sur Fast 3G | Interaction possible avant chargement LLM |
-| Appels API | 1–3 appels par génération | Coût data et latence maîtrisés |
+| Premier écran | < 1 s après lancement | Premier formulaire affiché rapidement |
 | Temps de réponse LLM | < 15 s | Feedback utilisateur pendant l'attente |
-| PWA offline | Formulaires + historique sauvegardés | Pas de dépendance au réseau pour reprendre un brouillon |
+| Appels LLM | 1–3 appels par génération | Latence maîtrisée |
+| Stockage local | SQLite + filesystem | Projets et brouillons sauvegardés localement |
+| Mode offline | Formulaires + historique sauvegardés | Pas de dépendance au réseau pour reprendre un brouillon |
 
-### Adaptations réseau pour le MVP 1
+### Adaptations pour le MVP 1
 
-- **Désactiver la génération IA automatique** sur connexion très lente (`saveData`, 2G) ; proposer un mode "brouillon hors-ligne".
+- **Génération IA désactivée si hors-ligne** ; proposition de reprendre un brouillon local.
 - **Compresser les prompts** envoyés au LLM (JSON compact, pas de coordonnées brutes).
-- **Mise en cache locale** du brief utilisateur et du plan généré (`localStorage` / IndexedDB).
+- **Mise en cache locale** du brief utilisateur et du plan généré (SQLite).
 - **Thumbnails et assets légers** : pas de GLB, pas de HDRI.
 
 ---
 
-## 1. RÉSEAU — livrer sur connexion faible
+## 1. FIRST-RUN ET ASSET STORE — installer les assets sur machine faible
 
-### 1.1 Mesurer avant tout
+### 1.1 Principe
 
-| Connexion | Débit | Latence | 1 Mo prend |
-|-----------|-------|---------|------------|
-| Fibre/5G | 100+ Mbps | 10 ms | instant |
-| 4G correcte | 20 Mbps | 50 ms | 0,4 s |
-| **Fast 3G** (réf. DevTools) | 1,6 Mbps | 150 ms | **5 s** |
-| Slow 3G | 0,4 Mbps | 400 ms | 20 s |
-| Edge | 0,25 Mbps | 800 ms | 32 s |
+L'application Tauri est distribuée avec un **binaire léger** (< 20 Mo). Les assets 3D initiaux sont téléchargés une seule fois lors du first-run, puis stockés localement. Cette section définit comment rendre ce first-run robuste sur machine ou connexion faibles.
 
-> Test obligatoire : DevTools → Network → **Fast 3G throttle** + CPU 4× slowdown. C'est la référence de validation.
+### 1.2 Budgets du first-run
 
-### 1.2 Budgets réseau (MVP)
+| Élément | Cible | Raison |
+|---------|-------|--------|
+| Binaire installateur | < 20 Mo | Téléchargement rapide même en ADSL |
+| Pack assets initial | ~1,5 Mo compressé | meshopt + KTX2, ~25 référents |
+| HDRI | < 200 Ko (.env 256) | Inclus dans le pack initial |
+| Installation sur disque | < 5 s | Décompression + écriture locale |
+| **Premier rendu 3D interactif** | **< 3 s** après installation des assets | Tout est local |
 
-| Bundle | Cible gz | Raison |
-|--------|----------|--------|
-| HTML + CSS critique (inlined) | **< 14 Ko** | Tient dans 1 segment TCP, premier paint |
-| JS critique (UI Solid + 3D minimale) | **< 120 Ko gz** | ~4 s sur Fast 3G |
-| three.js (vendor chunk) | ~155 Ko gz | Chargé en parallèle, cacheable |
-| Catalogue complet (25 GLB) | **< 1,5 Mo total** | meshopt, < 80 Ko/pièce |
-| HDRI | < 200 Ko (.env 256) | |
-| **Premier rendu 3D interactif** | **< 1 Mo** | Tout le reste en lazy |
-
-> La règle d'or : **1 Mo au démarrage max**. Au-delà, on diffère.
+> La règle d'or : **le binaire démarre immédiatement** ; les assets arrivent en arrière-plan ou sur demande.
 
 ### 1.3 Code-splitting agressif (Vite)
 
-L'app est découpée en **chunks** chargés à la demande via `import()` dynamique :
+L'app reste découpée en **chunks** chargés à la demande via `import()` dynamique :
 
 ```ts
 // main.ts — chunk INITIAL (critique, ~120 Ko gz)
@@ -105,24 +96,22 @@ async function enter3D() {
 | `engine` | Clic "Générer 3D" | three.js + World + BVH |
 | `visit` | Clic "Visiter" | WalkController + collision |
 | `postfx` | Qualité "Photoréaliste" | postprocessing (SSAO/Bloom) |
-| `catalog-*` | Drag d'un meuble | GLB du meuble spécifique |
+| `catalog-*` | Drag d'un meuble | GLB du meuble spécifique (depuis le disque) |
 | `llm` | Clic "Analyser" | Client LLM |
 
-Résultat : un utilisateur qui **dessine juste un plan** ne télécharge **jamais three.js** (~155 Ko gz économisés).
+Résultat : un utilisateur qui **dessine juste un plan** ne charge **jamais three.js** (~155 Ko gz économisés).
 
 ### 1.4 Préchargement intelligent (prefetch)
 
-Pendant que l'utilisateur dessine (CPU idle), on **prefetch** silencieusement le chunk 3D :
+Pendant que l'utilisateur dessine (CPU idle), on **prefetch** silencieusement le chunk 3D depuis le disque local :
 
 ```ts
 // Dès que l'utilisateur a tracé son 1er mur fermé
 const prefetch = import('./engine/Engine');  // non awaité
-// → quand il cliquera "Générer 3D", le chunk est déjà en cache navigateur
+// → quand il cliquera "Générer 3D", le chunk est déjà en mémoire
 ```
 
-Combiné au `requestIdleCallback` : on précharge quand le navigateur est idle.
-
-### 1.5 Compression transit
+### 1.5 Compression des assets
 
 | Asset | Format | Gain |
 |-------|--------|------|
@@ -131,59 +120,38 @@ Combiné au `requestIdleCallback` : on précharge quand le navigateur est idle.
 | Textures | KTX2/Basis | -70 % vs PNG |
 | HDRI | .env (256) | pré-filtré, pas de runtime |
 
-Vite + serveur avec Brotli activé. Toutes les réponses `Content-Encoding: br`.
-
 ### 1.6 Catalogue d'objets en paresse
 
-On ne télécharge **que les meubles réellement utilisés**, au moment du drag :
+On ne charge **que les meubles réellement utilisés** depuis le disque local, au moment du drag :
 
 ```
-[Catalogue]  [Drag canapé] → fetch sofa.glb (80 Ko)  → instance 3D
-                                  ↑ seulement maintenant
+[Catalogue local]  [Drag canapé] → read sofa.glb (80 Ko)  → instance 3D
+                                        ↑ depuis le cache local
 ```
 
 L'aperçu du catalogue utilise des **thumbnails WebP statiques** (~2 Ko), pas les GLB.
 
-### 1.7 PWA — cache & hors-ligne
+### 1.7 Asset Store local
 
-Service worker + Workbox. Stratégies différenciées :
+Les assets sont gérés par le backend Tauri :
 
-| Ressource | Stratégie | Pourquoi |
-|-----------|-----------|----------|
-| HTML | Network-first (fallback cache) | Toujours frais, mais offline OK |
-| JS/CSS chunks | **Stale-while-revalidate** | Instant après 1re visite |
-| GLB meubles, HDRI, textures | **Cache-first** (long TTL) | Immuables, versionnés par hash |
-| API LLM | Network-only | Pas de cache (réponses dynamiques) |
+| Ressource | Emplacement | Stratégie |
+|-----------|-------------|-----------|
+| Binaire app | `Program Files/Habiter/` ou `.app` | Installé une fois |
+| Pack assets initial | `AppData/Roaming/Habiter/assets/` | Téléchargé au first-run, cache permanent |
+| Assets communautaires | Même dossier | Téléchargés à la demande |
+| API LLM | — | Network-only, pas de cache |
 
-```ts
-// workbox-config.js (squelette)
-{ globPatterns: ['**/*.{js,css,glb,ktx2,env,webp}'],
-  maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-  // → tout le catalogue + moteur en cache après 1re visite
-}
-```
+> **Résultat :** après le first-run, l'app tourne **100 % hors-ligne**. La 2e ouverture est instantanée car tout est lu depuis le disque.
 
-> **Résultat :** après la 1re visite, l'app tourne **100 % hors-ligne**. Sur une 2e visite même en métro (pas de réseau), l'app s'ouvre instantanément.
+### 1.8 Adaptation au first-run lent
 
-### 1.8 Adaptation au réseau (Network Information API)
+Si le téléchargement du pack initial est lent ou impossible :
 
-Détection de connexion faible pour servir une version allégée :
-
-```ts
-const conn = (navigator as any).connection;
-const slow = conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g'
-          || conn?.saveData === true
-          || (conn?.downlinkMax && conn.downlinkMax < 1);   // < 1 Mbps
-
-if (slow) {
-  setQuality('low');
-  disablePrefetch();          // ne pas consommer la data
-  useLowResThumbnails();      // catalogue en 64px au lieu de 256px
-  showNotice("Connexion lente détectée : qualité réduite");
-}
-```
-
-Respecte l'en-tête HTTP `Save-Data` et le `navigator.connection.saveData` ([MDN Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API)).
+- **Téléchargement différé** : proposer "Télécharger plus tard" et utiliser un mode limité (édition 2D sans meubles 3D).
+- **Pack allégé** : proposer un pack minimal (< 500 Ko) avec seulement les assets essentiels.
+- **Reprise de téléchargement** : si l'app est fermée pendant le téléchargement, elle reprend à l'endroit de l'interruption.
+- **Message clair** : barre de progression, vitesse, temps restant estimé.
 
 ---
 
@@ -414,15 +382,11 @@ function detectProfile(): 'low' | 'mid' | 'high' {
   const ram = (navigator as any).deviceMemory;        // Go (Chrome)
   const cores = navigator.hardwareConcurrency;
   const gpu = estimateGpuTier();
-  const conn = (navigator as any).connection?.effectiveType;
-  const saveData = (navigator as any).connection?.saveData;
 
   let score = 0;
   if (ram && ram >= 8) score += 2; else if (ram) score += 1;
   if (cores && cores >= 8) score += 2; else if (cores) score += 1;
   if (gpu === 'high') score += 3;
-  if (conn === '4g' || conn === '5g') score += 1;
-  if (saveData) score -= 2;
 
   if (score <= 2) return 'low';
   if (score <= 5) return 'mid';
@@ -444,15 +408,16 @@ L'utilisateur peut **toujours surcharger** via le QualityToggle.
 
 Checklist de tests à exécuter avant chaque release :
 
-- [ ] **DevTools Fast 3G + CPU 4× slow** → LCP < 2,5 s, TTI < 5 s
-- [ ] **Cache vidé** → premier rendu 3D interactif < 5 s sur 3G
-- [ ] **2e visite** (cache SW) → app ouvre instant, fonctionne offline
-- [ ] **Save-Data activé** → qualité auto-réduite, pas de prefetch
-- [ ] **RAM** : onglet ouvert 10 min → heap < 200 Mo (pas de fuite)
+- [ ] **Premier lancement** → écran affiché < 1 s, first-run proposé clairement
+- [ ] **First-run sur connexion modeste** → pack initial téléchargé et installé < 30 s
+- [ ] **2e ouverture** (assets locaux) → app ouvre instant, fonctionne offline
+- [ ] **Mode limité** (assets non installés) → édition 2D fonctionne, message IA offline clair
+- [ ] **RAM** : app ouverte 10 min → heap < 200 Mo (pas de fuite)
 - [ ] **Visite FPS 5 min** → 0 jank > 16 ms détecté (Performance tab)
 - [ ] **GPU intégré (Intel UHD)** → > 30 FPS qualité Ultra-low
 - [ ] **deviceMemory = 4** → pas de crash OOM
 - [ ] **Layout / function `dispose()`** : scène reconstruite 20× → heap stable
+- [ ] **WebView2 Windows** → app démarre sans erreur sur version récente
 
 > Sans ces tests passés, pas de release. Ce sont les **acceptance criteria low-end**.
 
@@ -463,26 +428,26 @@ Checklist de tests à exécuter avant chaque release :
 | Opti | Dans PERFORMANCE.md ? | Action |
 |------|----------------------|--------|
 | Code-splitting chunks | non couvert | **Ajouté ici §1.3** |
-| PWA / offline | non couvert | **Ajouté ici §1.7** |
-| Network Information API | non couvert | **Ajouté ici §1.8** |
-| Lazy catalog GLB | mentionné V1.1 | **Promu MVP ici §1.6** |
+| Asset Store / first-run | non couvert | **Ajouté ici §1** |
+| Stockage local | non couvert | **Ajouté ici §1.7** |
+| Lazy catalog GLB depuis disque | mentionné V1.1 | **Promu MVP ici §1.6** |
 | Object pooling / zero-alloc | non couvert | **Ajouté ici §3.2** |
 | BVH build en worker | non couvert | **Ajouté ici §3.4** |
 | Dynamic resolution | non couvert | **Ajouté ici §4.1** ⭐ |
 | FXAA vs MSAA | non couvert | **Ajouté ici §4.2** |
 | Distance culling + fog | non couvert | **Ajouté ici §4.3** |
 | Progressive enhancement | non couvert | **Ajouté ici §5.2** |
-| Profil machine auto | partiel (GPU) | **Étendu ici §6** (RAM+cores+net) |
+| Profil machine auto | partiel (GPU) | **Étendu ici §6** (RAM+cores) |
 | LOD / Impostors | roadmap | Confirmés V1.1/V1.2 |
 
 ---
 
 ## Références
 
-### Réseau / PWA
-- [Progressive Web Apps 2026 Guide](https://www.digitalapplied.com/blog/progressive-web-apps-2026-complete-development-guide)
-- [Offline-First PWAs: Service Worker Caching](https://www.magicbell.com/blog/offline-first-pwas-service-worker-caching-strategies)
-- [MDN Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API)
+### Asset Store / Tauri
+- [Tauri 2 Documentation](https://tauri.app/)
+- [Tauri File System Plugin](https://tauri.app/plugin/file-system/)
+- [Tauri SQL Plugin](https://tauri.app/plugin/sql/)
 - [Vite dynamic imports discussion](https://github.com/vitejs/vite/discussions/17730)
 
 ### CPU / GC / Workers

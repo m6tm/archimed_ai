@@ -14,11 +14,13 @@ Chaque version doit rester démontrable en une phrase.
 
 ## V1.0 — MVP 1 : Générateur de plan technique 2D par IA
 
+- Application **desktop Tauri** : binaire léger, logique locale
 - Saisie guidée du terrain, de la forme, des étages, du programme et des contraintes
 - Dessin à la main levée et import d'image
-- Génération IA d'un plan technique 2D (murs, portes, fenêtres, pièces, poteaux)
+- Génération IA d'un plan technique 2D (murs, portes, fenêtres, pièces, poteaux) via backend Rust
 - Validation des normes techniques françaises générales
 - Rendu SVG éditable avec plans côte à côte pour les niveaux
+- Persistance locale SQLite
 - Export vers le MVP 2
 
 > Voir `docs/MVP1.md` pour le détail.
@@ -31,10 +33,11 @@ Chaque version doit rester démontrable en une phrase.
 - Éditeur 2D SVG pour affiner le plan
 - IA structure : nommer et classer les pièces
 - Génération 3D photoréaliste avec culling BVH
+- **Asset Store local** : téléchargement initial du pack ~25 meubles, cache local
 - Catalogue de ~25 meubles, placement drag & drop
 - Visite FPS avec collision BVH
 - Profil machine auto et qualité adaptative
-- PWA offline
+- 100 % offline après téléchargement initial
 
 > Voir `docs/MVP2.md` pour le détail.
 
@@ -42,18 +45,19 @@ Chaque version doit rester démontrable en une phrase.
 
 ## V2.1 — Fondations solides
 
-- Sauvegarde cloud (Postgres + auth légère)
-- Partage d'un projet **par lien** (read-only d'abord)
 - Multi-projets / dashboard utilisateur
-- Export **PNG** de la vue 3D (pour réseaux sociaux)
+- Export **PNG** de la vue 3D
+- Sauvegarde cloud **optionnelle** (Postgres + auth légère)
+- Partage d'un projet **par lien** (read-only d'abord)
 
 ---
 
-## V2.5 — Import pro
+## V2.5 — Import pro + marketplace d'assets
 
 - Import **plan PDF/DWG** → conversion auto en murs (OCR + vectorisation)
 - Calibrage d'échelle
 - Templates de départ (T2, T3, maison R+1)
+- **Marketplace d'assets communautaires** : publier, noter, installer des packs d'objets 3D
 
 ---
 
@@ -123,6 +127,8 @@ Chaque version doit rester démontrable en une phrase.
 
 | Idée originale | Statut |
 |----------------|--------|
+| Application desktop Tauri (local, offline) | V1.0 |
+| Asset Store local (pack initial + communautaire) | V2.0 |
 | Générateur de plan 2D IA | V1.0 |
 | Éditeur 2D/3D/visite | V2.0 |
 | Multi-étages, escaliers | V2.1+ |
@@ -146,6 +152,7 @@ Chaque version doit rester démontrable en une phrase.
 | Modes (Rapide/Guidé/Libre/Pro) | V2.5 |
 | Feedback "ça marche / c'est beau / c'est cher" | V3.0 |
 | Simulation temporelle / saisons | V3.5 |
+| Marketplace d'assets 3D | V2.5 |
 | Galerie / challenges / marketplace | V6.0 |
 | IA compagnon | V6.0 |
 | Import PDF/DWG | V2.5 |

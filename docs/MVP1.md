@@ -61,7 +61,7 @@ Deux modes d'entrée sont proposés :
 | Mode | Description | Usage |
 |------|-------------|-------|
 | **Dessin à la main levée** | Tracé libre à la souris ou au doigt dans une zone SVG | Croquis rapide, forme personnalisée |
-| **Import d'image** | Téléchargement d'une photo ou d'un scan de croquis | Relevé existant, dessin sur papier |
+| **Import d'image** | Import d'une photo ou d'un scan de croquis depuis le disque local | Relevé existant, dessin sur papier |
 
 La forme est normalisée en un polygone fermé simplifié. L'application propose une correction automatique si le tracé est ouvert ou trop irrégulier.
 
@@ -177,6 +177,21 @@ Le format pivot reste **JSON sérialisable**, compatible avec le modèle `Plan` 
 
 Les poteaux sont ajoutés comme une nouvelle entité temporaire dans le MVP 1 ; ils peuvent être convertis en murs porteurs ou conservés comme annotations structurelles dans le MVP 2.
 
+### 4.3 Stockage local et offline
+
+Le MVP 1 persiste toutes les données localement via le backend Tauri :
+
+- **Projets et plans** : SQLite local (`tauri-plugin-sql`) dans le répertoire utilisateur.
+- **Brief en cours** : sauvegarde automatique (debounced) à chaque modification.
+- **Préférences** : clé API LLM, fournisseur choisi, dernière session.
+- **Mode offline** : tout le parcours de saisie et d'édition 2D fonctionne sans internet. Seule la génération par IA nécessite une connexion.
+
+```ts
+// Exemple d'API de persistence
+await invoke('save_project', { id, name, plan });
+const projects = await invoke('list_projects');
+```
+
 ---
 
 ## 5. Pipeline IA
@@ -188,11 +203,13 @@ Avant d'appeler le LLM, les entrées brutes sont normalisées :
 1. **Terrain** : conversion en polygone rectangle + orientation.
 2. **Forme** :
    - tracé SVG → simplification (Douglas-Peucker), fermeture automatique, conversion en polygone
-   - image importée → extraction de contour par modèle de vision ou traitement local
+   - image importée → extraction de contour par modèle de vision ou traitement local en Rust (`image-rs` / `cv`)
 3. **Programme** : parsing en `RoomSpec[]` avec surfaces par défaut selon le type.
 4. **Contraintes** : extraction de mots-clés structurés (orientation, style, PMR, etc.).
 
 ### 5.2 Génération par LLM
+
+Les appels au LLM passent par le backend Tauri (`invoke('generate_plan', brief)`). La clé API n'est **jamais** dans le bundle frontend ; elle est stockée dans les préférences locales de l'application (chiffrées ou dans le keyring OS).
 
 Le LLM reçoit un prompt structuré contenant :
 
@@ -201,7 +218,12 @@ Le LLM reçoit un prompt structuré contenant :
 - les contraintes utilisateur
 - un extrait des normes techniques de `docs/STANDARDS.md`
 
-Le LLM produit un JSON structuré et validé par schéma Zod :
+Le backend Rust appelle le fournisseur LLM (OpenAI / Anthropic), récupère la réponse et la valide par schéma Zod avant de la renvoyer au frontend :
+
+```ts
+// frontend
+const levelPlans = await invoke('generate_plan', { brief, provider: 'openai' });
+```
 
 ```
 {
@@ -229,9 +251,9 @@ Un validateur indépendant vérifie le plan généré :
 
 ### 5.4 Correction et fallback
 
-- Si le plan est invalide, l'IA reçoit les erreurs et tente une correction (retry auto).
+- Si le plan est invalide, l'IA reçoit les erreurs et tente une correction (retry auto côté backend).
 - Si le retry échoue, l'application affiche le plan avec les **alertes** et laisse l'utilisateur corriger.
-- En cas d'erreur réseau ou de timeout, un fallback propose un plan minimal ou un message clair.
+- Si l'application est hors-ligne, un message clair indique que la génération par IA nécessite internet. L'utilisateur peut reprendre un brouillon sauvegardé localement ou dessiner manuellement.
 
 ---
 

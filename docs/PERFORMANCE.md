@@ -1,11 +1,11 @@
 # Performance — Spécifications techniques approfondies
 
 > Statut : **Référence**. Compagnon de `MVP1.md` et `MVP2.md`. Détaille le *comment* des optimisations.
-> Dernière mise à jour : 2026-06-27
+> Dernière mise à jour : 2026-08-19
 
 ## Périmètre
 
-- **MVP 1** (générateur de plan 2D IA) : interface principalement SVG + appels API. Les optimisations 3D ne s'appliquent pas.
+- **MVP 1** (générateur de plan 2D IA) : interface principalement SVG + appels au LLM via Tauri. Les optimisations 3D ne s'appliquent pas.
 - **MVP 2** (éditeur 2D/3D/visite) : c'est ici que les optimisations GPU/render deviennent critiques.
 
 Ce document se concentre sur le MVP 2. Les budgets spécifiques au MVP 1 figurent en §0.1.
@@ -28,18 +28,18 @@ Une maison en intérieur est un cas paradisiaque pour le culling : la plupart de
 
 ## 0.1 Performance du MVP 1
 
-Le MVP 1 est une interface web 2D (SVG) avec des appels API vers un LLM. Les contraintes GPU du MVP 2 ne s'appliquent pas.
+Le MVP 1 est une interface desktop 2D (SVG) avec des appels au LLM via le backend Tauri. Les contraintes GPU du MVP 2 ne s'appliquent pas.
 
 | Métrique | Cible MVP 1 |
 |----------|-------------|
 | Bundle JS gz (initial) | < 120 Ko |
-| Premier affichage formulaire | < 2 s sur Fast 3G |
+| Premier affichage formulaire | < 1 s après lancement |
 | Temps de génération IA | < 15 s (LLM + validation) |
 | Temps de rendu SVG | < 500 ms après génération |
 | Mémoire JS | < 80 Mo |
 | Appels API LLM | 1 à 3 par génération (prompt + retry) |
 
-> Le MVP 1 doit rester fluide sur mobile et desktop bas de gamme, sans WebGL.
+> Le MVP 1 doit rester fluide sur desktop bas de gamme, sans WebGL.
 
 ---
 
@@ -220,7 +220,7 @@ toktx --bcmp sofa_basecolor.png    # BC compression GPU
 
 ### 4.3 Chargement progressif
 
-Les meubles lointains (via occlusion culling) peuvent être chargés en lazy : on ne télécharge le GLB que quand l'objet entre dans le frustum pour la première fois. (Optimisation V1.1 — MVP charge tout au démarrage, budget total < 2 Mo.)
+Les meubles lointains (via occlusion culling) peuvent être chargés en lazy : on ne charge le GLB depuis le disque local que quand l'objet entre dans le frustum pour la première fois. (Optimisation V1.1 — MVP charge tout au démarrage, budget total < 2 Mo.)
 
 ---
 
@@ -327,10 +327,12 @@ Sans mesure, pas d'opti. On compare avant/après chaque optimisation.
 | Textures GPU | < 15 Mo | < 30 Mo | < 50 Mo |
 | RAM WASM/JS | < 100 Mo | < 120 Mo | < 200 Mo |
 | GPU idle en édition | ~0% | ~0% | ~0% |
-| **Premier rendu 3D (Fast 3G)** | **< 5 s** | < 5 s | < 5 s |
+| **Premier rendu 3D (assets locaux)** | **< 3 s** | < 3 s | < 3 s |
 | **Jank > 16 ms** | **0** | 0 | 0 |
+| **Taille binaire installateur** | < 20 Mo | < 20 Mo | < 20 Mo |
+| **Pack assets initiaux** | ~1,5 Mo | ~1,5 Mo | ~1,5 Mo |
 
-> **Niveau « Ultra-low »** ajouté pour machines faibles + connexions lentes (GPU intégré ancien, 3G/Edge, `saveData`). Activé automatiquement par le profil machine (voir LOWEND.md §6).
+> **Niveau « Ultra-low »** ajouté pour machines faibles (GPU intégré ancien, peu de RAM, disque lent). Activé automatiquement par le profil machine (voir LOWEND.md §6).
 
 ---
 
@@ -348,7 +350,7 @@ Sans mesure, pas d'opti. On compare avant/après chaque optimisation.
 | V1.3 | **Atlas de textures** partagé (1 bind pour tous meubles) | -draw calls |
 | V1.3 | Streaming de scènes (gros projets multi-étages) | Scale |
 
-> **Techniques low-end au MVP** (détails dans `LOWEND.md`) : code-splitting chunks, PWA/offline, Network Information API, GLB paresseux, object pooling, BVH build en worker, dynamic resolution scaling, FXAA, distance culling, progressive enhancement, profil machine auto.
+> **Techniques low-end au MVP** (détails dans `LOWEND.md`) : code-splitting chunks, stockage local, Asset Store, GLB paresseux depuis le disque, object pooling, BVH build en worker, dynamic resolution scaling, FXAA, distance culling, progressive enhancement, profil machine auto.
 
 ---
 

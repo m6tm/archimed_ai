@@ -37,7 +37,15 @@ Le MVP 2 ne redemande pas à l'utilisateur de dessiner un plan from scratch. Il 
 
 ## 1. Stack technique
 
-Identique à celle définie dans l'ancien `MVP.md` (r17x / r18x, SolidJS, Vite, TypeScript strict, three-mesh-bvh, meshoptimizer, postprocessing, Workbox).
+| Couche | Techno |
+|--------|--------|
+| Shell desktop | **Tauri 2** (Rust) |
+| UI | **SolidJS** + Vite + TypeScript strict |
+| Moteur 3D | **vanilla three.js** (r17x / r18x, WebGL2) |
+| Backend local | **Rust** (Tauri commands) |
+| Persistence | SQLite local + système de fichiers |
+| Asset Store | Manifestes JSON + cache local (pack initial + communautaire) |
+| Perf 3D | three-mesh-bvh, meshoptimizer, postprocessing |
 
 > Voir `docs/MVP1.md` pour la justification des choix. Les raisons de ne pas utiliser React/R3F/Threlte et de rester sur WebGL2 par défaut restent valables.
 
@@ -58,9 +66,17 @@ L'architecture reste centrée sur la séparation UI (SolidJS) / Moteur 3D (vanil
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  COUCHE UI (SolidJS, signaux)                                   │
-│  Toolbar, catalogue, plan 2D SVG, panneaux                      │
+│  Toolbar, catalogue, plan 2D SVG, panneaux, Asset Store         │
 │         │  createSignal / createStore                           │
 │         │  → mutation → déclenche rebuild ciblé du moteur 3D     │
+└─────────┬──────────────────────────────────────────────────────┘
+          │  Tauri invoke() — persistence + assets + IA
+          ▼
+┌────────────────────────────────────────────────────────────────┐
+│  COUCHE TAURI (Rust)                                            │
+│  project commands  → SQLite local                               │
+│  asset commands    → Asset Store local                          │
+│  llm commands      → proxy IA (clé API locale)                  │
 └─────────┬──────────────────────────────────────────────────────┘
           │  planSnapshot (immutable) + engine.setPlan(snapshot)
           ▼
@@ -95,6 +111,32 @@ export interface Plan {
 ```
 
 > ⭐ Le modèle **Référent / Instance** des objets (`AssetDefinition` / `PlacedObject`) reste inchangé. Voir `docs/OBJECTS.md`.
+
+---
+
+## 3bis. Asset Store local
+
+Le MVP 2 repose sur un **Asset Store** local géré par le backend Tauri :
+
+### Pack initial
+
+- Au premier lancement, l'application propose de télécharger le pack d'assets initiaux (~25 référents, ~1,5 Mo compressés).
+- Les assets sont téléchargés depuis un serveur distant, vérifiés par `contentHash`, puis stockés dans le répertoire utilisateur.
+- Une fois installés, ils sont chargés depuis le disque local : **aucun fetch au démarrage**.
+
+### Assets communautaires
+
+- Un panneau « Asset Store » permet de parcourir et télécharger des assets optionnels proposés par la communauté.
+- Chaque asset téléchargé est stocké localement et utilisable hors-ligne.
+- Les mises à jour sont signalées par un badge ; l'utilisateur choisit quand les installer.
+
+### API frontend
+
+```ts
+const installed = await invoke('list_installed_assets');
+const path = await invoke('get_asset_path', { assetId: 'builtin:sofa_3p_scandi@1' });
+// path → chemin local résolu par Tauri, chargé dans three.js via convertFileSrc
+```
 
 ---
 
@@ -150,7 +192,11 @@ Inchangées par rapport à l'ancien `MVP.md` :
 
 ## 6. Catalogue d'objets
 
-Le catalogue de ~25 référents reste identique. Voir `docs/OBJECTS.md`.
+Le catalogue de ~25 référents est fourni via l'**Asset Store** local. Voir `docs/OBJECTS.md` pour le modèle Référent / Instance.
+
+- Les référents initiaux sont téléchargés lors du first-run.
+- Les référents communautaires peuvent être ajoutés à volonté via le panneau Asset Store.
+- Le moteur 3D charge toujours les GLB depuis les chemins locaux du cache.
 
 ---
 
@@ -158,18 +204,19 @@ Le catalogue de ~25 référents reste identique. Voir `docs/OBJECTS.md`.
 
 Chaque sprint reste un livrable démontrable, mais le point de départ change : on part d'un plan importé plutôt que d'une page blanche.
 
-### Sprint 0 — Setup
+### Sprint 0 — Setup Tauri
 
-- pnpm workspace + `apps/web` (Vite + SolidJS-TS)
+- pnpm workspace + `apps/desktop` (Vite + SolidJS-TS) + `src-tauri` (Rust)
+- Configurer `tauri.conf.json` (permissions `fs`, `sql`, `http`, `dialog`)
 - `Engine.ts` : renderer + render-on-demand + HUD fps
-- **Démo :** cube qui ne rend que si on le fait bouger
+- **Démo :** cube qui ne rend que si on le fait bouger, lancé via `pnpm tauri dev`
 
 ### Sprint 1 — Import et édition 2D
 
 - Chargement d'un plan depuis le MVP 1 (import JSON)
 - `PlanEditor` SVG + grille snap 20cm
 - `WallTool`, `DoorTool`, `WindowTool`, `DimensionLabel`
-- `planStore` (Solid store) + persistance localStorage
+- `planStore` (Solid store) + persistance SQLite via Tauri
 - Tests `detectRooms`
 - **Démo :** on charge un plan MVP 1 et on l'affine
 
@@ -189,10 +236,13 @@ Chaque sprint reste un livrable démontrable, mais le point de départ change : 
 - `StructurePanel` : pièces nommées éditables
 - **Démo :** les pièces s'appellent "Salon", "Cuisine", "Chambre"
 
-### Sprint 4 — Catalogue + placement
+### Sprint 4 — Asset Store + catalogue + placement
 
+- `AssetStore` backend : manifeste, téléchargement, vérification hash, cache local
+- Écran first-run : téléchargement du pack initial (~1,5 Mo)
 - Catalogue ~25 référents optimisés
 - `CatalogPanel` drag&drop, `FurnitureBuilder` (InstancedMesh)
+- Chargement des GLB depuis les chemins locaux du cache
 - TransformControls move/rotate, collision AABB
 - **Démo :** on meuble le plan
 
@@ -202,7 +252,7 @@ Chaque sprint reste un livrable démontrable, mais le point de départ change : 
 - `PostFX` (SSAO+Bloom+Vignette, qualité haute only)
 - `QualityToggle` + détection auto + downgrade auto
 - Slider heure du jour
-- `ProjectStore` : save/load multi-projets, export JSON
+- `ProjectStore` : save/load multi-projets via Tauri SQLite, export JSON
 - **Démo finale :** la boucle complète, fluide
 
 > Le détail ordonné avec critères de sortie phase par phase figure dans `docs/REALIZATION.md`.
@@ -235,7 +285,7 @@ Les risques sont identiques à ceux de l'ancien MVP, avec un risque supplémenta
 | Risque | Prob. | Impact | Mitigation |
 |--------|-------|--------|------------|
 | Plan MVP 1 incompatible avec le moteur 3D | Moyen | Élevé | Schéma `Plan` strict, validation à l'import |
-| Clé LLM exposée côté client | Élevé | Critique | Proxy backend minimal en prod |
+| Clé LLM exposée côté client | Élevé | Critique | Clé stockée localement (keyring OS ou fichier chiffré), appels via Tauri |
 | Occlusion culling mal réglé | Moyen | Moyen | Hystérésis + conservateur |
 | Photoréalisme = fps bas sur GPU intégrés | Élevé | Moyen | Toggle qualité + downgrade auto |
 | Scope creep | Élevé | Élevé | Ce doc fige le périmètre |

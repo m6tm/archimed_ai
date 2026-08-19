@@ -2,16 +2,20 @@
 
 > Imagine. Crée. Visite. Vis.
 
-Une application web **performance-first** pour décrire une maison → obtenir un plan technique 2D généré par IA → affiner → obtenir une maison 3D photoréaliste visitable → la meubler → s'y promener.
+Une application desktop **performance-first** pour décrire une maison → obtenir un plan technique 2D généré par IA → affiner → obtenir une maison 3D photoréaliste visitable → la meubler → s'y promener.
 
 ## Stack (édition performance-first)
 
 | Couche | Techno |
 |--------|--------|
-| Moteur 3D | **vanilla three.js** (WebGL2, r17x) — contrôle total perf |
+| Shell desktop | **Tauri 2** (Rust) — binaire natif, accès système, offline par défaut |
 | UI shell | **SolidJS** (signals, ~7-20 Ko, pas de VDOM) |
+| Moteur 3D | **vanilla three.js** (WebGL2, r17x) — contrôle total perf |
+| Backend local | **Rust** (Tauri commands) — stockage, proxy IA, Asset Store |
+| Persistence | **SQLite** local + système de fichiers |
+| Asset Store | Manifestes JSON + cache local — pack initial + communautaire |
 | Perf 3D | **three-mesh-bvh** (occlusion culling), InstancedMesh, BatchedMesh |
-| Build | Vite + TypeScript (strict) + tree-shaking |
+| Build | Tauri CLI + Vite + TypeScript (strict) + tree-shaking |
 | State | solid-js stores + signals |
 
 > **Pas de React / R3F / Threlte.** La 3D est pilotée en impératif direct (contrôle maximal de la perf) ; SolidJS ne gère que l'UI mince. Voir `docs/PERFORMANCE.md` pour la justification.
@@ -23,14 +27,18 @@ Une application web **performance-first** pour décrire une maison → obtenir u
 
 Cinq piliers : **Culling · Batching · Render-on-demand · Assets compressés · Qualité adaptative.**
 
-Objectifs : **> 30 FPS sur GPU intégré**, **> 60 FPS sur GPU dédié**, **GPU idle en édition**, **app 100 % offline après 1re visite**, **premier rendu 3D < 5 s sur Fast 3G**.
+Objectifs : **> 30 FPS sur GPU intégré**, **> 60 FPS sur GPU dédié**, **GPU idle en édition**, **100 % offline après téléchargement initial des assets**, **premier rendu 3D < 3 s une fois les assets locaux installés**.
 
 ## Démarrage rapide
 
 ```bash
 pnpm install
-pnpm --filter web dev
+pnpm tauri dev
 ```
+
+> Nécessite [Rust](https://rustup.rs/) et le [Tauri CLI](https://tauri.app/start/prerequisites/) installés.
+
+Au premier lancement, l'application propose de télécharger le pack d'assets initiaux (~1,5 Mo). Une fois installé, tout fonctionne hors-ligne.
 
 ## Documentation
 
@@ -44,7 +52,7 @@ pnpm --filter web dev
 
 - [`docs/OBJECTS.md`](./docs/OBJECTS.md) — ⭐ **Modèle Référent / Instance des objets** (AssetDefinition, GLB pivot, LODs, IA/import/export)
 - [`docs/PERFORMANCE.md`](./docs/PERFORMANCE.md) — Spécifications perf GPU/render (culling, batching, budgets, mesure)
-- [`docs/LOWEND.md`](./docs/LOWEND.md) — Spécifications machines & connexions faibles (réseau, PWA offline, RAM/GC, dynamic resolution, profil auto)
+- [`docs/LOWEND.md`](./docs/LOWEND.md) — Spécifications machines faibles, first-run et stockage local (RAM/GC, dynamic resolution, profil auto)
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) — Vision complète post-MVP (V1.1 → V5)
 
 ## La boucle produit

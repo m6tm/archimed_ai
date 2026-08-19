@@ -15,7 +15,7 @@ Références croisées :
 - `docs/STANDARDS.md` — normes techniques encodées
 - `docs/OBJECTS.md` — modèle Référent/Instance
 - `docs/PERFORMANCE.md` — specs performance
-- `docs/LOWEND.md` — machines et connexions faibles
+- `docs/LOWEND.md` — machines faibles, first-run et stockage local
 - `docs/ROADMAP.md` — vision post-MVP
 
 ---
@@ -30,9 +30,11 @@ Références croisées :
 
 ### 0.2 Environnement de travail
 - [ ] Installer Node 22 LTS + pnpm 9+
+- [ ] Installer [Rust](https://rustup.rs/) + [Tauri CLI](https://tauri.app/start/prerequisites/)
+- [ ] Vérifier WebView2 sur Windows (Tauri le détecte / installe)
 - [ ] Compte OpenAI **ou** Anthropic + clé API (dev local)
-- [ ] Compte CDN/stockage assets pour les GLB du MVP 2
-- [ ] Compte hébergement preview (Vercel ou Netlify)
+- [ ] Serveur d'assets pour les GLB du MVP 2 (ou stockage local en dev)
+- [ ] (Optionnel) Compte code-signing pour le build Windows
 
 ### 0.3 Repos & conventions
 - [ ] `git init` + `.gitignore`
@@ -86,7 +88,7 @@ Références croisées :
 
 ### 1.6 State & persistance
 - [ ] `briefStore` (Solid store) : terrain, envelope, levels, program, constraints
-- [ ] Persistance localStorage auto (debounced)
+- [ ] Persistance SQLite via Tauri auto (debounced)
 - [ ] Migration de schéma
 
 ### 1.7 Critères de sortie Phase 1
@@ -107,9 +109,10 @@ Références croisées :
 - [ ] Extraction des contraintes de style
 
 ### 2.2 LLM client
-- [ ] `llm/client.ts` : abstraction OpenAI ↔ Anthropic
+- [ ] `src-tauri/src/commands/llm.rs` : abstraction OpenAI ↔ Anthropic côté Rust
 - [ ] Prompt versionné incluant les règles de `STANDARDS.md`
-- [ ] Schéma Zod strict de sortie
+- [ ] Schéma Zod strict de sortie validé côté backend
+- [ ] Frontend : `invoke('generate_plan', { brief, provider })`
 
 ### 2.3 Génération du plan
 - [ ] `generatePlan(brief)` : appel LLM avec prompt structuré
@@ -167,13 +170,14 @@ Références croisées :
 
 # Partie B — MVP 2 : Éditeur 2D/3D/visite
 
-## Phase 4 — Squelette technique
+## Phase 4 — Squelette technique Tauri
 
-> **Livrable :** une page web qui affiche un cube three.js, ne rend que quand il bouge, avec un HUD fps.
+> **Livrable :** une fenêtre desktop qui affiche un cube three.js, ne rend que quand il bouge, avec un HUD fps.
 
-- [ ] pnpm workspace + `apps/web` (Vite + SolidJS + TypeScript strict)
+- [ ] pnpm workspace + `apps/desktop` (Vite + SolidJS + TypeScript strict) + `src-tauri` (Rust)
 - [ ] Installer `three`, `three-mesh-bvh`, `postprocessing`, `meshoptimizer`
 - [ ] ESLint + Prettier + `tsconfig` strict
+- [ ] Configurer `tauri.conf.json` (permissions `fs`, `sql`, `http`, `dialog`)
 - [ ] Code-splitting : `engine` chunk séparé de `core`
 - [ ] `Engine.ts` : WebGLRenderer + render-on-demand + HUD fps
 - [ ] Object pooling de base
@@ -181,7 +185,7 @@ Références croisées :
 - [ ] Test : le cube ne rend que sur `engine.invalidate()`, GPU idle entre
 
 ### 4.1 Critères de sortie Phase 4
-- ✅ `pnpm dev` affiche un cube
+- ✅ `pnpm tauri dev` affiche un cube
 - ✅ HUD fps visible
 - ✅ Profiler : GPU ~0% quand statique
 - ✅ Bundle `core` < 120 Ko gz (sans three)
@@ -205,7 +209,7 @@ Références croisées :
 
 ### 5.3 State & persistance
 - [ ] `planStore` (Solid store)
-- [ ] Persistance localStorage auto
+- [ ] Persistance SQLite via Tauri auto
 - [ ] Migration de schéma
 
 ### 5.4 Fondations geometry
@@ -267,34 +271,41 @@ Références croisées :
 
 ---
 
-## Phase 8 — Catalogue & placement
+## Phase 8 — Asset Store + catalogue + placement
 
 > **Livrable :** on meuble le plan en glissant-déposant des objets, avec collision.
 
 ### 8.1 Modèle Référent/Instance
 - [ ] `lib/assets/types.ts`
 - [ ] `AssetRegistry`
-- [ ] `builtin/catalog.json` : ~25 référents
+- [ ] `packages/assets-registry/builtin-catalog.json` : ~25 référents
 
-### 8.2 Asset pipeline
+### 8.2 Asset Store backend
+- [ ] `src-tauri/src/storage/asset_store.rs` : manifeste, téléchargement, cache local
+- [ ] `src-tauri/src/commands/assets.rs` : `install_asset`, `list_installed_assets`, `get_asset_path`
+- [ ] Écran first-run : téléchargement du pack initial (~1,5 Mo)
+- [ ] Panneau Asset Store : assets communautaires (browse / install / update)
+
+### 8.3 Asset pipeline
 - [ ] Sourcer ~25 GLB libres
 - [ ] Vérifier les licences
 - [ ] `gltfpack` : compression meshopt
 - [ ] `AssetNormalizer`
 - [ ] Thumbnails WebP
 
-### 8.3 Placement
+### 8.4 Placement
 - [ ] `CatalogPanel` drag&drop
-- [ ] `FurnitureBuilder` : chargement paresseux, clone (partage VRAM)
+- [ ] `FurnitureBuilder` : chargement paresseux depuis le disque local, clone (partage VRAM)
 - [ ] InstancedMesh pour objets répétés
 - [ ] TransformControls move/rotate
 - [ ] Collision AABB
 
-### 8.4 Critères de sortie Phase 8
+### 8.5 Critères de sortie Phase 8
 - ✅ On glisse 6 meubles, on les positionne/rotationne
 - ✅ 4 chaises = 1 draw call
 - ✅ Pas de recollision GPU au drag
 - ✅ Catalogue filtre par catégorie
+- ✅ Les assets sont chargés depuis le cache local
 
 ---
 
@@ -319,9 +330,10 @@ Références croisées :
 - [ ] Downgrade auto runtime
 - [ ] `QualityToggle` manuel
 
-### 9.4 Réseau adaptatif
-- [ ] Network Information API
-- [ ] Respect `Save-Data`
+### 9.4 Détection offline
+- [ ] Commande Rust `is_online()` pour vérifier la connectivité
+- [ ] Message clair si IA indisponible hors-ligne
+- [ ] Asset Store communautaire accessible uniquement en ligne
 
 ### 9.5 Soleil dynamique
 - [ ] Slider heure du jour
@@ -336,13 +348,14 @@ Références croisées :
 
 ## Phase 10 — Robustesse, low-end & finition
 
-> **Livrable :** l'app tient sur machines/connexions faibles et gère les erreurs gracieusement.
+> **Livrable :** l'app tient sur machines faibles et gère les erreurs gracieusement.
 
-### 10.1 PWA & offline
-- [ ] Service Worker via Workbox
-- [ ] Stratégies de cache
-- [ ] 2e visite offline → app fonctionne
-- [ ] `manifest.webmanifest`
+### 10.1 Asset Store & offline
+- [ ] Écran first-run : téléchargement du pack initial robuste (reprise, annulation)
+- [ ] Cache local des assets dans le dossier utilisateur
+- [ ] 2e ouverture offline → app fonctionne
+- [ ] Mode limité si assets non installés
+- [ ] Gestion des mises à jour d'assets
 
 ### 10.2 Gestion d'erreur & états
 - [ ] Error boundary Solid
@@ -357,7 +370,7 @@ Références croisées :
 ### 10.4 Progressive enhancement
 - [ ] Premier rendu 3D progressif
 - [ ] Préchargement idle du chunk engine
-- [ ] CSS critique inliné (< 14 Ko)
+- [ ] Splash screen / first-run UI léger
 
 ### 10.5 Onboarding minimal
 - [ ] Bulles de découverte au 1er lancement
@@ -365,7 +378,7 @@ Références croisées :
 
 ### 10.6 Critères de sortie Phase 10
 - ✅ Validation `LOWEND.md` §7 complète
-- ✅ App offline fonctionne après 1re visite
+- ✅ App offline fonctionne après téléchargement initial des assets
 - ✅ Heap stable après 20 rebuilds
 - ✅ Aucune erreur non gérée à l'écran
 
@@ -382,30 +395,33 @@ Références croisées :
 - [ ] **Test de fidélité MVP 1 → MVP 2** : comparaison géométrique plan 2D / vue de dessus 3D
 
 ### 11.2 Validation performance
-- [ ] DevTools Fast 3G + CPU 4× slow
+- [ ] Premier écran < 1 s après lancement
+- [ ] First-run < 30 s sur connexion modeste
 - [ ] GPU intégré → > 30 FPS
 - [ ] GPU dédié → > 60 FPS
 - [ ] Bundle check
-- [ ] Lighthouse
+- [ ] Taille binaire installateur < 20 Mo
 
 ### 11.3 Validation low-end
-- [ ] Cache vidé → premier rendu 3D < 5 s
+- [ ] Assets locaux présents → premier rendu 3D < 3 s
 - [ ] `deviceMemory = 4` simulé
-- [ ] `Save-Data: on`
-- [ ] Offline après 1re visite
+- [ ] First-run sur connexion modeste < 30 s
+- [ ] Offline après téléchargement initial des assets
 
-### 11.4 Compatibilité navigateurs
-- [ ] Matrice définie : Chrome/Edge, Firefox, Safari 17+
+### 11.4 Compatibilité desktop
+- [ ] Windows 10+ avec WebView2
+- [ ] macOS 12+ (Apple Silicon / Intel)
+- [ ] Linux (WebKitGTK)
 - [ ] Détection WebGL2
 
 ### 11.5 Sécurité
-- [ ] Clé LLM via `.env` en local, proxy backend en prod
-- [ ] Rate-limit sur le proxy
-- [ ] CSP configurée
+- [ ] Clé LLM stockée dans les préférences locales chiffrées (jamais dans le bundle)
+- [ ] Appels LLM via le backend Rust Tauri
+- [ ] Rate-limit côté backend
 - [ ] Pas de secrets dans le bundle
 
-### 11.6 SEO / partage / meta
-- [ ] `<title>`, meta description, Open Graph
+### 11.6 Métadonnées app
+- [ ] Nom, icône, version dans `tauri.conf.json`
 - [ ] Favicon
 
 ### 11.7 Documentation livrée
@@ -415,10 +431,10 @@ Références croisées :
 - [ ] Docs `docs/` à jour et cohérentes
 
 ### 11.8 Déploiement
-- [ ] Build prod
-- [ ] Déploiement preview
-- [ ] Service Worker activé
-- [ ] Test de fumée
+- [ ] Build prod desktop (`pnpm tauri build`)
+- [ ] Installateur Windows (.msi / .exe)
+- [ ] (Optionnel) Installateur macOS (.dmg)
+- [ ] Test de fumée sur machine vierge
 
 ### 11.9 Bêta-test & retour
 - [ ] 3-5 bêta-testeurs sans explication
@@ -430,7 +446,7 @@ Références croisées :
 - ✅ MVP 2 : boucle complète fonctionnelle en < 2 min
 - ✅ Toutes les cibles perf tenues
 - ✅ Tests verts
-- ✅ Déployé en prod
+- ✅ Installateur desktop généré et testé
 - ✅ 3+ bêta-testeurs ont complété chaque boucle
 
 ---

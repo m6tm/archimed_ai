@@ -291,9 +291,9 @@ Le **hash du GLB** (`contentHash`) sert de clé de stockage :
 /assets/objects/7b/7b2e44a1...glb     ← chaise générée par Meshy
 ```
 
-- **Déduplication** : deux imports du même fichier = 1 fichier sur disque/CDN.
+- **Déduplication** : deux imports du même fichier = 1 fichier sur disque local.
 - **Intégrité** : si le hash au chargement ≠ hash attendu → refus (anti-corruption).
-- **Cache PWA** : clé de cache stable (LOWEND.md §1.7), versionnée naturellement.
+- **Cache local** : clé de cache stable (Asset Store), versionnée naturellement.
 - **Futur IPFS/distribué** : le hash est déjà une adresse content-addressable.
 
 ```ts
@@ -413,7 +413,7 @@ Le référent peut porter plusieurs jeux de matériaux (chêne, noyer, laqué) �
 | Unity/Unreal | **FBX** (+ maps externes) | Engine-friendly |
 | Apple AR / Quick Look | **USDZ** | iOS |
 | Sauvegarde projet | **JSON** | Référents (par référence) + instances |
-| Partage web | lien (futur) | Référent sur CDN, instances dans l'URL |
+| Partage web | lien (futur) | Référent sur serveur d'assets, instances dans l'URL |
 
 ```ts
 async function exportObject(
@@ -612,7 +612,7 @@ class FurnitureBuilder {
 | O2 | Hash de contenu | **SHA-256 16 hex** | Dédup + intégrité + future IPFS |
 | O3 | Compression | **meshopt + KTX2** | Meilleur ratio que DRACO, decode GPU |
 | O4 | Conversion import (FBX/OBJ/USD) | **côté build pour builtin, Worker runtime pour import** | Évite de plomber le main thread |
-| O5 | Stockage import/IA (V2) | **IndexedDB** (cache) + CDN (futur) | Offline + scalable |
+| O5 | Stockage import/IA (V2) | **Système de fichiers local** (Asset Store) + serveur d'assets (futur) | Offline + scalable |
 | O6 | LODs générés | **3 niveaux (1.0/0.5/0.25)** au build pour builtin | Détail max préservé |
 | O7 | Overrides d'instance | **V2** (couleur peinte) | MVP = pas d'override, instanciation pure |
 
